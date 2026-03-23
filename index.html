@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完全解析ソルバー搭載 反転パズル</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; text-align: center; background-color: #f8f9fa; margin: 0; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { font-size: 20px; color: #333; }
+        #status-label { font-size: 16px; margin-bottom: 5px; font-weight: bold; }
+        #moves-label { font-size: 20px; font-weight: bold; color: blue; margin-bottom: 5px; }
+        .solver-badge { font-size: 12px; color: white; background-color: #ff6b6b; padding: 3px 8px; border-radius: 12px; display: inline-block; margin-bottom: 15px; display: none; }
+        .section-box { border: 1px solid #ccc; border-radius: 5px; padding: 10px; margin-bottom: 15px; position: relative; }
+        .section-title { font-size: 14px; font-weight: bold; margin-top: -20px; background: white; display: inline-block; padding: 0 5px; color: #555; }
+        .radio-group { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+        .btn-group { display: flex; justify-content: center; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
+        button { cursor: pointer; border: 1px solid #aaa; border-radius: 5px; padding: 8px 10px; font-size: 14px; font-weight: bold; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #btn-easy { background-color: #ccffcc; } #btn-normal { background-color: #ffffcc; }
+        #btn-hard { background-color: #ffcccc; } #btn-super { background-color: #ff99cc; }
+        #btn-god { background-color: #cc99ff; }
+        #btn-reset { background-color: #ffddaa; width: 100%; padding: 10px; margin-bottom: 15px; }
+        
+        #grid-container { display: grid; gap: 2px; margin: 20px auto; justify-content: center; background-color: #333; padding: 2px; border: 2px solid #333; }
+        .cell { background-color: white; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: blue; transition: background-color 0.2s; }
+        .cell.active { background-color: #ff9999; }
+        #seed-area { background-color: #fff3e0; }
+        .seed-input-group { display: flex; gap: 5px; margin-top: 5px; }
+        #seed-input { flex: 1; padding: 5px; font-family: monospace; }
+        .answer-btn { width: 100%; padding: 10px; margin-bottom: 5px; font-size: 14px; background-color: #e6e6fa; }
+        .controls { display: grid; grid-template-columns: 50px 50px 50px; gap: 5px; justify-content: center; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>反転パズル (完全解析ソルバー搭載)</h1>
+    
+    <div id="status-label">サイズと難易度を選んでください</div>
+    <div id="moves-label">残り手数: -</div>
+    <div id="solver-badge" class="solver-badge">✨ AI最短手数解析済</div>
+
+    <div class="section-box" id="seed-area">
+        <div class="section-title">パズルを共有する</div>
+        <div class="seed-input-group">
+            <input type="text" id="seed-input" placeholder="シード値">
+            <button onclick="playFromSeedInput()">読込</button>
+            <button onclick="copyShareURL()">URLコピー</button>
+        </div>
+    </div>
+
+    <div class="section-box">
+        <div class="section-title">新規ゲーム作成</div>
+        <div class="radio-group" id="size-selectors"></div>
+        <div class="btn-group" style="margin-top:10px;">
+            <button id="btn-easy" onclick="startGameByDifficulty(8)">初級</button>
+            <button id="btn-normal" onclick="startGameByDifficulty(15)">中級</button>
+            <button id="btn-hard" onclick="startGameByDifficulty(22)">上級</button>
+            <button id="btn-super" onclick="startGameByDifficulty(27)">超級</button>
+            <button id="btn-god" onclick="startGameByDifficulty(30)">神級</button>
+        </div>
+    </div>
+
+    <div id="grid-container"></div>
+
+    <button id="btn-reset" onclick="resetGame()">🔄 同じ問題をやり直す</button>
+
+    <div class="section-box" style="background-color: #f0f8ff;">
+        <div class="section-title" style="background-color: #f0f8ff;">ヒント・解答機能</div>
+        <button class="answer-btn" onclick="toggleAnswer()">💡 最短の解答手順を見る</button>
+        <button class="answer-btn" id="btn-autoplay" onclick="autoPlayAnswer()" style="background-color: #d8bfd8;">▶ 最短ルートで自動実演</button>
+        <div id="answer-display" style="display: none; margin-top: 10px; font-weight: bold; word-break: break-all; line-height: 1.5;"></div>
+    </div>
+
+    <div class="controls">
+        <div style="grid-column: 2;"><button onclick="attemptMove('Up')">▲</button></div>
+        <div style="grid-column: 1; grid-row: 2;"><button onclick="attemptMove('Left')">◀</button></div>
+        <div style="grid-column: 2; grid-row: 2;"><button onclick="attemptMove('Down')">▼</button></div>
+        <div style="grid-column: 3; grid-row: 2;"><button onclick="attemptMove('Right')">▶</button></div>
+    </div>
+</div>
+
+<script>
+    // --- シード付き乱数生成器 ---
+    function mulberry32(a) {
+        return function() {
+          var t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        }
+    }
+
+    let gridSize = 5;
+    let gridData = [];
+    let playerPos = [0, 0];
+    let movesLeft = 0;
+    let isPlaying = false;
+    let lastMove = null;
+    let currentSeedString = "";
+
+    let initialGridData, initialPlayerPos, initialMoves, solutionMoves;
+    let isAutoPlaying = false;
+    let autoPlayInterval = null;
+
+    const opposites = {'Up': 'Down', 'Down': 'Up', 'Left': 'Right', 'Right': 'Left'};
+    const moveMap = {'Up': [-1, 0], 'Down': [1, 0], 'Left': [0, -1], 'Right': [0, 1]};
+    const arrowMap = {'Up': '▲', 'Down': '▼', 'Left': '◀', 'Right': '▶'};
+
+    window.onload = () => {
+        setupSizeSelectors();
+        updateDifficultyButtons();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const seedParam = urlParams.get('seed');
+        if (seedParam) playFromSeed(seedParam);
+
+        document.addEventListener('keydown', (e) => {
+            if (!isPlaying || isAutoPlaying) return;
+            if (e.key === 'ArrowUp') attemptMove('Up');
+            if (e.key === 'ArrowDown') attemptMove('Down');
+            if (e.key === 'ArrowLeft') attemptMove('Left');
+            if (e.key === 'ArrowRight') attemptMove('Right');
+        });
+    };
+
+    function setupSizeSelectors() {
+        const container = document.getElementById('size-selectors');
+        for (let i = 5; i <= 9; i++) {
+            const label = document.createElement('label');
+            label.innerHTML = `<input type="radio" name="gridSize" value="${i}" ${i==5?'checked':''}> ${i}x${i}`;
+            label.querySelector('input').addEventListener('change', (e) => {
+                gridSize = parseInt(e.target.value);
+                updateDifficultyButtons();
+            });
+            container.appendChild(label);
+        }
+    }
+
+    function getActualSteps(baseSteps) {
+        const ratio = (gridSize * gridSize) / 25.0;
+        return Math.round(baseSteps * ratio);
+    }
+
+    function updateDifficultyButtons() {
+        document.getElementById('btn-easy').innerText = `初級 (${getActualSteps(8)}手目安)`;
+        document.getElementById('btn-normal').innerText = `中級 (${getActualSteps(15)}手目安)`;
+        document.getElementById('btn-hard').innerText = `上級 (${getActualSteps(22)}手目安)`;
+        document.getElementById('btn-super').innerText = `超級 (${getActualSteps(27)}手目安)`;
+        document.getElementById('btn-god').innerText = `神級 (${getActualSteps(30)}手目安)`;
+    }
+
+    function startGameByDifficulty(baseSteps) {
+        const randomID = Math.floor(Math.random() * 999999);
+        const newSeed = `${gridSize}-${baseSteps}-${randomID}`;
+        playFromSeed(newSeed);
+    }
+
+    function playFromSeedInput() {
+        const val = document.getElementById('seed-input').value;
+        if (val) playFromSeed(val);
+    }
+
+    function playFromSeed(seedString) {
+        stopAutoPlay();
+        const parts = seedString.split('-');
+        if (parts.length !== 3) return;
+
+        currentSeedString = seedString;
+        document.getElementById('seed-input').value = seedString;
+        
+        gridSize = parseInt(parts[0]);
+        const baseSteps = parseInt(parts[1]);
+        const seedVal = parseInt(parts[2]);
+        
+        const radios = document.getElementsByName('gridSize');
+        radios.forEach(r => r.checked = (parseInt(r.value) === gridSize));
+        updateDifficultyButtons();
+
+        const actualSteps = getActualSteps(baseSteps);
+        const rng = mulberry32(seedVal);
+        buildGridUI();
+        
+        // 1. スマート生成（無駄なループを極力省いて問題を作る）
+        const generated = generateBoardSeeded(actualSteps, rng);
+        
+        // 2. BFSソルバーによる完全解析（真の最短手数を割り出す）
+        let optimizedPath = solvePuzzleBFS(generated.grid, generated.pos[0], generated.pos[1]);
+        
+        if (optimizedPath) {
+            solutionMoves = optimizedPath;
+            movesLeft = optimizedPath.length; // 最短手数を厳密な制限手数に設定
+            document.getElementById('solver-badge').style.display = 'inline-block';
+        } else {
+            // 解析限界を超えた場合は生成ルートをフォールバックとして使用
+            solutionMoves = generated.moves.reverse().map(m => opposites[m]);
+            movesLeft = solutionMoves.length;
+            document.getElementById('solver-badge').style.display = 'none';
+        }
+
+        gridData = generated.grid;
+        playerPos = generated.pos;
+        initialGridData = gridData.map(row => [...row]);
+        initialPlayerPos = [...playerPos];
+        initialMoves = movesLeft;
+        lastMove = null;
+        isPlaying = true;
+
+        document.getElementById('status-label').innerText = `パズル開始: ${gridSize}x${gridSize}`;
+        document.getElementById('answer-display').style.display = 'none';
+        updateGridUI();
+    }
+
+    // ★スマート生成ロジック（ループを回避して生成）
+    function generateBoardSeeded(steps, rng) {
+        let grid = Array.from({length: gridSize}, () => Array(gridSize).fill(0));
+        let r = Math.floor(rng() * gridSize);
+        let c = Math.floor(rng() * gridSize);
+        
+        let currentMask = 0n;
+        let visitedStates = new Set();
+        visitedStates.add((currentMask << 7n) | BigInt(r * gridSize + c));
+
+        let lastGenMove = null;
+        let genMoves = [];
+        const directions = [
+            {dr: -1, dc: 0, name: 'Up'}, {dr: 1, dc: 0, name: 'Down'},
+            {dr: 0, dc: -1, name: 'Left'}, {dr: 0, dc: 1, name: 'Right'}
+        ];
+
+        for (let i = 0; i < steps; i++) {
+            currentMask ^= (1n << BigInt(r * gridSize + c));
+            grid[r][c] = 1 - grid[r][c];
+
+            let validMoves = directions.filter(d => {
+                if (lastGenMove && d.name === opposites[lastGenMove]) return false;
+                let nr = r + d.dr, nc = c + d.dc;
+                if(nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
+                    // ループ防止: 過去に全く同じ盤面+位置にいなかったかチェック
+                    let stateKey = (currentMask << 7n) | BigInt(nr * gridSize + nc);
+                    if (visitedStates.has(stateKey)) return false; 
+                    return true;
+                }
+                return false;
+            });
+
+            // 行き止まりになった場合は妥協して進む
+            if (validMoves.length === 0) {
+                validMoves = directions.filter(d => {
+                    if (lastGenMove && d.name === opposites[lastGenMove]) return false;
+                    let nr = r + d.dr, nc = c + d.dc;
+                    return (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize);
+                });
+                if (validMoves.length === 0) break;
+            }
+
+            let move = validMoves[Math.floor(rng() * validMoves.length)];
+            r += move.dr; c += move.dc;
+            lastGenMove = move.name;
+            genMoves.push(move.name);
+
+            visitedStates.add((currentMask << 7n) | BigInt(r * gridSize + c));
+        }
+        return {grid, pos: [r, c], moves: genMoves};
+    }
+
+    // ★完全解析ソルバー (幅優先探索 BFS)
+    // ビット演算(BigInt)を駆使して高速に状態を探索し、真の最短経路を返します
+    function solvePuzzleBFS(grid, startR, startC) {
+        let startMask = 0n;
+        for(let r=0; r<gridSize; r++){
+            for(let c=0; c<gridSize; c++){
+                if(grid[r][c] === 1) startMask |= (1n << BigInt(r * gridSize + c));
+            }
+        }
+
+        const targetMask1 = 0n; // 全て0
+        let targetMask2 = 0n; // 全て1
+        for(let i=0; i<gridSize*gridSize; i++) targetMask2 |= (1n << BigInt(i));
+
+        if(startMask === targetMask1 || startMask === targetMask2) return [];
+
+        let queue = [ { mask: startMask, r: startR, c: startC, path: [], lastMove: null } ];
+        let qIdx = 0;
+        let visited = new Set();
+        visited.add((startMask << 7n) | BigInt(startR * gridSize + startC));
+
+        const dirs = [
+            { dr: -1, dc: 0, name: 'Up', opp: 'Down' },
+            { dr: 1, dc: 0, name: 'Down', opp: 'Up' },
+            { dr: 0, dc: -1, name: 'Left', opp: 'Right' },
+            { dr: 0, dc: 1, name: 'Right', opp: 'Left' }
+        ];
+
+        // ブラウザのフリーズを防ぐための探索上限ノード数
+        let maxNodes = 100000; 
+
+        while(qIdx < queue.length) {
+            let curr = queue[qIdx++];
+            if(qIdx > maxNodes) return null; // 制限オーバー時は解析中断（フォールバックへ）
+
+            for(let d of dirs) {
+                if(curr.lastMove === d.opp) continue;
+                let nr = curr.r + d.dr;
+                let nc = curr.c + d.dc;
+                if(nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
+                    let nPos = nr * gridSize + nc;
+                    let nMask = curr.mask ^ (1n << BigInt(nPos));
+
+                    if(nMask === targetMask1 || nMask === targetMask2) {
+                        return [...curr.path, d.name]; // 最短ルート発見！
+                    }
+
+                    let stateKey = (nMask << 7n) | BigInt(nPos);
+                    if(!visited.has(stateKey)) {
+                        visited.add(stateKey);
+                        queue.push({ mask: nMask, r: nr, c: nc, path: [...curr.path, d.name], lastMove: d.name });
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    function buildGridUI() {
+        const container = document.getElementById('grid-container');
+        container.innerHTML = '';
+        container.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+        let cellSize = gridSize <= 6 ? '50px' : (gridSize <= 7 ? '40px' : '30px');
+
+        for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.id = `cell-${r}-${c}`;
+                cell.style.width = cell.style.height = cellSize;
+                container.appendChild(cell);
+            }
+        }
+    }
+
+    function updateGridUI() {
+        document.getElementById('moves-label').innerText = `残り手数: ${movesLeft}`;
+        for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+                const cell = document.getElementById(`cell-${r}-${c}`);
+                if (!cell) continue;
+                cell.classList.toggle('active', gridData[r][c] === 1);
+                cell.innerText = (r === playerPos[0] && c === playerPos[1]) ? "★" : "";
+            }
+        }
+    }
+
+    function attemptMove(moveName, isAuto = false) {
+        if (!isPlaying || (isAutoPlaying && !isAuto)) return;
+        if (lastMove && moveName === opposites[lastMove]) return;
+
+        let dr = moveMap[moveName][0], dc = moveMap[moveName][1];
+        let nr = playerPos[0] + dr, nc = playerPos[1] + dc;
+
+        if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
+            playerPos = [nr, nc];
+            gridData[nr][nc] = 1 - gridData[nr][nc];
+            lastMove = moveName;
+            movesLeft--;
+            updateGridUI();
+            checkGameEnd();
+        }
+    }
+
+    function checkGameEnd() {
+        let flat = gridData.flat();
+        if (flat.every(c => c === 0) || flat.every(c => c === 1)) {
+            isPlaying = false;
+            document.getElementById('status-label').innerText = "🎉 完璧なクリアです！";
+            return;
+        }
+        if (movesLeft <= 0) {
+            isPlaying = false;
+            document.getElementById('status-label').innerText = "GAME OVER (手数が尽きました)";
+        }
+    }
+
+    function resetGame() {
+        if (currentSeedString) playFromSeed(currentSeedString);
+    }
+
+    function copyShareURL() {
+        if (!currentSeedString) return;
+        const url = window.location.origin + window.location.pathname + "?seed=" + currentSeedString;
+        navigator.clipboard.writeText(url).then(() => alert("URLをコピーしました！友達に挑戦させましょう。"));
+    }
+
+    function toggleAnswer() {
+        const ansDiv = document.getElementById('answer-display');
+        ansDiv.style.display = ansDiv.style.display === 'none' ? 'block' : 'none';
+        ansDiv.innerHTML = `<span style="font-size:14px; color:#555;">【解析済ルート (${solutionMoves.length}手)】</span><br>` + solutionMoves.map(m => arrowMap[m]).join('➔');
+    }
+
+    function autoPlayAnswer() {
+        if (!isPlaying || isAutoPlaying) return;
+        resetGame();
+        isAutoPlaying = true;
+        let step = 0;
+        const ansDiv = document.getElementById('answer-display');
+        ansDiv.style.display = 'block';
+
+        autoPlayInterval = setInterval(() => {
+            if (step < solutionMoves.length) {
+                let pathHtml = solutionMoves.map((m, idx) => {
+                    return idx === step ? `<span style="color:red; font-size:1.3em;">${arrowMap[m]}</span>` : arrowMap[m];
+                }).join('➔');
+                ansDiv.innerHTML = `<span style="font-size:14px; color:#555;">【AI実演中...】</span><br>${pathHtml}`;
+                
+                attemptMove(solutionMoves[step], true);
+                step++;
+            } else {
+                stopAutoPlay();
+                ansDiv.innerHTML += `<br><span style="color:red; font-size:18px;">✨ 実演完了！ ✨</span>`;
+            }
+        }, 400);
+    }
+
+    function stopAutoPlay() {
+        clearInterval(autoPlayInterval);
+        isAutoPlaying = false;
+    }
+</script>
+</body>
+</html>
+
