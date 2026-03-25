@@ -24,16 +24,15 @@
         #btn-god { background-color: #cc99ff; }
         #btn-reset { background-color: #ffddaa; width: 100%; padding: 10px; margin-bottom: 15px; }
         
-        /* ★修正部分: 自動で伸縮しつつ正方形を維持するスマートなグリッド */
         #grid-container { 
             display: grid; 
             gap: 2px; 
-            margin: 20px auto; 
+            margin: 15px auto; 
             background-color: #333; 
             padding: 2px; 
             border: 2px solid #333; 
-            width: 100%; /* コンテナに合わせて広がる */
-            max-width: 400px; /* ただしPC等で大きくなりすぎないよう制限 */
+            width: 100%; 
+            max-width: 400px; 
         }
         .cell { 
             background-color: white; 
@@ -43,7 +42,7 @@
             font-weight: bold; 
             color: blue; 
             transition: background-color 0.2s; 
-            aspect-ratio: 1 / 1; /* ★どんな幅になっても絶対に完全な正方形を保つ魔法のCSS★ */
+            aspect-ratio: 1 / 1; 
         }
         .cell.active { background-color: #ff9999; }
         
@@ -51,7 +50,7 @@
         .seed-input-group { display: flex; gap: 5px; margin-top: 5px; }
         #seed-input { flex: 1; padding: 5px; font-family: monospace; }
         .answer-btn { width: 100%; padding: 10px; margin-bottom: 5px; font-size: 14px; background-color: #e6e6fa; }
-        .controls { display: grid; grid-template-columns: 50px 50px 50px; gap: 5px; justify-content: center; margin-top: 10px; }
+        .controls { display: grid; grid-template-columns: 50px 50px 50px; gap: 5px; justify-content: center; margin-top: 10px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -59,10 +58,6 @@
 <div class="container">
     <h1>反転パズル (完全解析ソルバー搭載)</h1>
     
-    <div id="status-label">サイズと難易度を選んでください</div>
-    <div id="moves-label">残り手数: -</div>
-    <div id="solver-badge" class="solver-badge">✨ AI最短手数解析済</div>
-
     <div class="section-box" id="seed-area">
         <div class="section-title">パズルを共有する</div>
         <div class="seed-input-group">
@@ -84,7 +79,18 @@
         </div>
     </div>
 
+    <div id="status-label" style="margin-top: 20px;">サイズと難易度を選んでください</div>
+    <div id="moves-label">残り手数: -</div>
+    <div id="solver-badge" class="solver-badge">✨ AI最短手数解析済</div>
+
     <div id="grid-container"></div>
+
+    <div class="controls">
+        <div style="grid-column: 2;"><button onclick="attemptMove('Up')">▲</button></div>
+        <div style="grid-column: 1; grid-row: 2;"><button onclick="attemptMove('Left')">◀</button></div>
+        <div style="grid-column: 2; grid-row: 2;"><button onclick="attemptMove('Down')">▼</button></div>
+        <div style="grid-column: 3; grid-row: 2;"><button onclick="attemptMove('Right')">▶</button></div>
+    </div>
 
     <button id="btn-reset" onclick="resetGame()">🔄 同じ問題をやり直す</button>
 
@@ -93,13 +99,6 @@
         <button class="answer-btn" onclick="toggleAnswer()">💡 最短の解答手順を見る</button>
         <button class="answer-btn" id="btn-autoplay" onclick="autoPlayAnswer()" style="background-color: #d8bfd8;">▶ 最短ルートで自動実演</button>
         <div id="answer-display" style="display: none; margin-top: 10px; font-weight: bold; word-break: break-all; line-height: 1.5;"></div>
-    </div>
-
-    <div class="controls">
-        <div style="grid-column: 2;"><button onclick="attemptMove('Up')">▲</button></div>
-        <div style="grid-column: 1; grid-row: 2;"><button onclick="attemptMove('Left')">◀</button></div>
-        <div style="grid-column: 2; grid-row: 2;"><button onclick="attemptMove('Down')">▼</button></div>
-        <div style="grid-column: 3; grid-row: 2;"><button onclick="attemptMove('Right')">▶</button></div>
     </div>
 </div>
 
@@ -334,15 +333,11 @@
         return null;
     }
 
-    // ★修正部分: セルのサイズ生成ロジックを変更
     function buildGridUI() {
         const container = document.getElementById('grid-container');
         container.innerHTML = '';
-        
-        // 分割比率だけを指定し、実際の大きさはCSSに任せる
         container.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
         
-        // 画面の圧迫を防ぐため、マスの数に合わせてフォントサイズを自動調整
         let fontSize = gridSize <= 6 ? '24px' : (gridSize <= 7 ? '20px' : '16px');
 
         for (let r = 0; r < gridSize; r++) {
@@ -350,7 +345,7 @@
                 const cell = document.createElement('div');
                 cell.className = 'cell';
                 cell.id = `cell-${r}-${c}`;
-                cell.style.fontSize = fontSize; // 固定サイズ(width/height)の直書きを廃止
+                cell.style.fontSize = fontSize; 
                 container.appendChild(cell);
             }
         }
