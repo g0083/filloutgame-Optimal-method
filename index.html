@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>完全解析ソルバー搭載 反転パズル</title>
     <style>
+        @keyframes blink {
+            0% { opacity: 1; background-color: #ffeb3b; }
+            50% { opacity: 0.3; background-color: white; }
+            100% { opacity: 1; background-color: #ffeb3b; }
+        }
+        .hint-flash {
+            animation: blink 1s infinite;
+            box-shadow: inset 0 0 10px #ffcc00;
+        }
+
         body { font-family: 'Arial', sans-serif; text-align: center; background-color: #f8f9fa; margin: 0; padding: 20px; box-sizing: border-box; }
         * { box-sizing: inherit; }
         .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -101,13 +111,57 @@
 
     <div class="section-box" style="background-color: #f0f8ff;">
         <div class="section-title" style="background-color: #f0f8ff;">ヒント・解答機能</div>
-        <button class="answer-btn" onclick="toggleAnswer()">💡 最短の解答手順を見る</button>
+        <button class="answer-btn" onclick="showHint()">💡 ヒント（正解ルートまで戻って次を表示）</button>
         <button class="answer-btn" id="btn-autoplay" onclick="autoPlayAnswer()" style="background-color: #d8bfd8;">▶ 最短ルートで自動実演</button>
         <div id="answer-display" style="display: none; margin-top: 10px; font-weight: bold; word-break: break-all; line-height: 1.5;"></div>
     </div>
 </div>
 
 <script>
+    // 1手だけ巻き戻す処理
+    function undoLastMove() {
+        if (moveHistory.length === 0) return;
+        let lastM = moveHistory.pop();
+        
+        // 現在地の反転を元に戻す
+        gridData[playerPos[0]][playerPos[1]] = 1 - gridData[playerPos[0]][playerPos[1]];
+        
+        // プレイヤーを一つ前の位置に戻す
+        let opp = opposites[lastM];
+        let dr = moveMap[opp][0], dc = moveMap[opp][1];
+        playerPos = [playerPos[0] + dr, playerPos[1] + dc];
+        
+        movesLeft++;
+        lastMove = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1] : null;
+    }
+
+    // ヒントを表示する処理
+    function showHint() {
+        if (!isPlaying || isAutoPlaying) return;
+        
+        // 想定解と実際の履歴を比較し、間違えた場所を探す
+        let matchIndex = 0;
+        while(matchIndex < moveHistory.length && matchIndex < solutionMoves.length && moveHistory[matchIndex] === solutionMoves[matchIndex]) {
+            matchIndex++;
+        }
+        
+        // 間違えた場所まで盤面を自動で巻き戻す
+        while (moveHistory.length > matchIndex) {
+            undoLastMove();
+        }
+        
+        // 次に進むべきマスにヒントをセットする
+        if (matchIndex < solutionMoves.length) {
+            let nextM = solutionMoves[matchIndex];
+            activeHint = {
+                r: playerPos[0] + moveMap[nextM][0],
+                c: playerPos[1] + moveMap[nextM][1],
+                arrow: arrowMap[nextM]
+            };
+        }
+        updateGridUI(); // 画面を更新してヒントを表示
+    }
+
     // スワイプ操作（Pointerイベント）のセットアップ
     function setupSwipeControls() {
         const container = document.getElementById('grid-container');
@@ -152,14 +206,14 @@
                     gridData[lr][lc] = 1 - gridData[lr][lc]; // 反転を元に戻す
                     playerPos = [r, c];
                     movesLeft++;
+                    moveHistory.pop(); // ★履歴から削除
+                    lastMove = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1] : null; // ★lastMoveを更新
                     updateGridUI();
-            } else {
+                } else {
                     // 新しいマスに進むか判定
                     let pr = playerPos[0], pc = playerPos[1];
-                    // 上下左右の隣接マスであるか
                     if (Math.abs(r - pr) + Math.abs(c - pc) === 1) { 
                         
-                        // ★追加: どの方向に進もうとしているか判定
                         let moveDir = '';
                         if (r < pr) moveDir = 'Up';
                         else if (r > pr) moveDir = 'Down';
@@ -171,16 +225,17 @@
                             return; 
                         }
 
-                        if (movesLeft > 0) { // 手数が残っている場合のみ進める
+                        if (movesLeft > 0) { 
+                            activeHint = null; // ★ヒントを解除
                             playerPos = [r, c];
-                            gridData[r][c] = 1 - gridData[r][c]; // 反転させる
+                            gridData[r][c] = 1 - gridData[r][c];
                             movesLeft--;
                             dragPath.push(currentRC);
+                            moveHistory.push(moveDir); // ★履歴を保存
                             updateGridUI();
                         }
                     }
                 }
-
             }
         });
 
@@ -228,6 +283,9 @@
     let isAutoPlaying = false;
     let autoPlayInterval = null;
     let isDragging = false;
+    let moveHistory = []; // 移動の履歴
+    let activeHint = null; // 現在表示中のヒント
+
     let dragPath = [];
 
 
@@ -333,6 +391,9 @@
         lastMove = null;
         isPlaying = true;
         isDragging = false; // これを追加（スワイプ状態リセット）
+        moveHistory = [];
+        activeHint = null;
+
 
 
         document.getElementById('status-label').innerText = `パズル開始: ${gridSize}x${gridSize}`;
@@ -515,7 +576,18 @@
                 const cell = document.getElementById(`cell-${r}-${c}`);
                 if (!cell) continue;
                 cell.classList.toggle('active', gridData[r][c] === 1);
-                cell.innerText = (r === playerPos[0] && c === playerPos[1]) ? "★" : "";
+                
+                if (r === playerPos[0] && c === playerPos[1]) {
+                    cell.innerText = "★";
+                    cell.classList.remove('hint-flash');
+                } else if (activeHint && r === activeHint.r && c === activeHint.c) {
+                    cell.innerHTML = `<span style="color:red; font-size:1.2em;">${activeHint.arrow}</span>`;
+                    cell.classList.add('hint-flash');
+                } else {
+                    cell.innerText = "";
+                    cell.classList.remove('hint-flash');
+                }
+
             }
         }
     }
@@ -528,13 +600,16 @@
         let nr = playerPos[0] + dr, nc = playerPos[1] + dc;
 
         if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
+            activeHint = null; // ★ヒントを解除
             playerPos = [nr, nc];
             gridData[nr][nc] = 1 - gridData[nr][nc];
             lastMove = moveName;
             movesLeft--;
+            moveHistory.push(moveName); // ★履歴を保存
             updateGridUI();
             checkGameEnd();
         }
+
     }
 
     function checkGameEnd() {
