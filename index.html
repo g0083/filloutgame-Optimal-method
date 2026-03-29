@@ -153,11 +153,24 @@
                     playerPos = [r, c];
                     movesLeft++;
                     updateGridUI();
-                } else {
+            } else {
                     // 新しいマスに進むか判定
                     let pr = playerPos[0], pc = playerPos[1];
                     // 上下左右の隣接マスであるか
                     if (Math.abs(r - pr) + Math.abs(c - pc) === 1) { 
+                        
+                        // ★追加: どの方向に進もうとしているか判定
+                        let moveDir = '';
+                        if (r < pr) moveDir = 'Up';
+                        else if (r > pr) moveDir = 'Down';
+                        else if (c < pc) moveDir = 'Left';
+                        else if (c > pc) moveDir = 'Right';
+
+                        // ★追加: スワイプの1歩目が、直前の操作の逆方向（逆走）になる場合は弾く
+                        if (dragPath.length === 1 && lastMove && moveDir === opposites[lastMove]) {
+                            return; 
+                        }
+
                         if (movesLeft > 0) { // 手数が残っている場合のみ進める
                             playerPos = [r, c];
                             gridData[r][c] = 1 - gridData[r][c]; // 反転させる
@@ -167,6 +180,7 @@
                         }
                     }
                 }
+
             }
         });
 
@@ -476,7 +490,7 @@
         return null;
     }
 
-function buildGridUI() {
+    function buildGridUI() {
         const container = document.getElementById('grid-container');
         container.innerHTML = '';
         container.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
